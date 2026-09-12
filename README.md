@@ -4,9 +4,16 @@ A first-person room you can walk around and throw balls in. Rendered with
 three.js on **WebGPU**, with screen-space global illumination and temporal
 anti-aliasing written in TSL.
 
-Click the canvas to take the pointer, `W` `A` `S` `D` (or `Z` `Q` `S` `D`) to
-move, `Space` to jump, hold and release the mouse to throw a ball. `Esc` gives
-the pointer back.
+On a desktop: click the canvas to take the pointer, `W` `A` `S` `D` (or
+`Z` `Q` `S` `D`) to move, `Space` to jump, hold and release the mouse to throw a
+ball, `Esc` to give the pointer back.
+
+On a phone or tablet: tap to start, then a thumb anywhere on the left half is a
+stick, dragging the right half looks around, and the two buttons throw and jump.
+Holding the throw button charges it, and the button fills up to show how much.
+
+Add `?debug` to the URL to get the scene, camera, renderer and input state on
+`window.blade`.
 
 ## Running it
 
@@ -20,6 +27,9 @@ machine `npm run build && npm start` gets you to a rendered frame much sooner.
 
 ## What is in it
 
+- **Controls** — one input singleton that the simulation reads, written either
+  by the keyboard and pointer lock or by the touch overlay. The controller does
+  not know which one it is being driven by.
 - **Renderer** — `WebGPURenderer` from `three/webgpu`, falling back to WebGL 2
   when `navigator.gpu` is missing. The badge in the corner says which one you
   got.
@@ -70,6 +80,23 @@ with `<primitive>`. Same result, one owner per concern.
 `normalView`, and `PostProcessing` became `RenderPipeline`. The SSGI uniform
 names are unchanged from r181, so the tuned settings carried over untouched.
 
+**Touch controls, which the original did not have.** The 2024 scene gated
+everything on `document.pointerLockElement`, which is never set on a coarse
+pointer, so on a phone the simulation never ran a single frame and the prompt
+never cleared. It did not have missing controls on top of a working scene, it
+was switched off. Movement, look, jump and throw now go through one input
+object that either control surface writes into, and the coarse-pointer branch
+mounts a thumbstick and two buttons instead of pointer lock.
+
+**The camera starts level.** r3f points a camera at the origin when the camera
+prop carries no rotation, and this one spawns at `(0, 1, 0)`, so the room opened
+looking straight down at the floor. With a mouse you swing off it before you
+notice. On a phone it is the first thing you see. The prop now carries
+`rotation: [0, 0, 0]`.
+
+**A phone renders at `dpr` 1.** The SSGI pass at a phone's native 3x would be
+nine times the pixels of a desktop at 1x for a GPU with a fraction of the power.
+
 **`shadows="percentage"`.** Bare `shadows` on an r3f canvas selects
 `PCFSoftShadowMap`, which `WebGPURenderer` does not have.
 
@@ -79,4 +106,8 @@ names are unchanged from r181, so the tuned settings carried over untouched.
   its radius is 0.1, so it can tunnel through a thin floor. This is inherited
   from the source and from the three.js demo the source came from.
 - SSGI plus TRAA is expensive. On a software rasteriser it is well under one
-  frame a second. It wants a real GPU.
+  frame a second. It wants a real GPU, and a phone is the least of them.
+- `eslint` reports `react-hooks/immutability` errors across the scene
+  components. Mutating the camera and refs inside `useFrame` is how r3f works,
+  and the React Compiler rules reject it on principle. The build does not run
+  them.

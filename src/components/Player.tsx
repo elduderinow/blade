@@ -5,18 +5,21 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { Capsule } from "three/examples/jsm/math/Capsule.js";
+import { input } from "@/lib/input";
 import { useCollision } from "./CollisionContext";
 
 const GRAVITY = 30;
 const STEPS_PER_FRAME = 5;
 const JUMP_SPEED = 15;
+/** How far you can look up or down before you would be upside down. */
+const PITCH_LIMIT = Math.PI / 2 - 0.01;
 
 /**
  * three.js's own FPS demo controller: a capsule stepped five times a frame
  * against the world octree, with the camera riding its top cap.
  *
- * WASD and ZQSD both work, which is how the 2024 version had it: Ray's keyboard
- * is AZERTY.
+ * It reads the input singleton rather than the keyboard, so the same controller
+ * runs from a keyboard or from a thumbstick.
  */
 function Controller() {
   const camera = useThree((s) => s.camera);
@@ -26,19 +29,29 @@ function Controller() {
   const right = useRef(new THREE.Vector3());
   const step = useRef(new THREE.Vector3());
   const onFloor = useRef(false);
-  const keys = useRef({ forward: false, backward: false, left: false, right: false, jump: false });
 
   useEffect(() => {
     camera.rotation.order = "YXZ";
   }, [camera]);
 
+  /**
+   * WASD and ZQSD both work, which is how the 2024 version had it: Ray's
+   * keyboard is AZERTY. Keys are held as a set and folded down to the same two
+   * axes the thumbstick writes, so the controller sees one kind of input.
+   */
   useEffect(() => {
+    const held = { forward: false, backward: false, left: false, right: false };
+
     const set = (code: string, down: boolean) => {
-      if (code === "KeyW" || code === "KeyZ") keys.current.forward = down;
-      if (code === "KeyS") keys.current.backward = down;
-      if (code === "KeyA" || code === "KeyQ") keys.current.left = down;
-      if (code === "KeyD") keys.current.right = down;
-      if (code === "Space") keys.current.jump = down;
+      if (code === "KeyW" || code === "KeyZ") held.forward = down;
+      else if (code === "KeyS") held.backward = down;
+      else if (code === "KeyA" || code === "KeyQ") held.left = down;
+      else if (code === "KeyD") held.right = down;
+      else if (code === "Space") input.jump = down;
+      else return;
+
+      input.forward = (held.forward ? 1 : 0) - (held.backward ? 1 : 0);
+      input.strafe = (held.right ? 1 : 0) - (held.left ? 1 : 0);
     };
 
     const onKeyDown = (event: KeyboardEvent) => set(event.code, true);
@@ -53,7 +66,19 @@ function Controller() {
   }, []);
 
   useFrame((_, delta) => {
-    if (!document.pointerLockElement || !ready || !octree.current) return;
+    if (!input.active || !ready || !octree.current) return;
+
+    // On touch there is no pointer lock to rotate the camera for us, so the
+    // accumulated drag is applied here and consumed.
+    if (input.yaw !== 0 || input.pitch !== 0) {
+      camera.rotation.y -= input.yaw;
+      camera.rotation.x = Math.max(
+        -PITCH_LIMIT,
+        Math.min(PITCH_LIMIT, camera.rotation.x - input.pitch),
+      );
+      input.yaw = 0;
+      input.pitch = 0;
+    }
 
     if (!playerCollider.current || !playerVelocity.current) {
       playerCollider.current = new Capsule(
@@ -75,14 +100,16 @@ function Controller() {
       direction.current.normalize();
 
       const speed = deltaTime * (onFloor.current ? 25 : 8);
-      if (keys.current.forward) velocity.addScaledVector(direction.current, speed);
-      if (keys.current.backward) velocity.addScaledVector(direction.current, -speed);
+      if (input.forward !== 0) {
+        velocity.addScaledVector(direction.current, speed * input.forward);
+      }
 
       right.current.crossVectors(direction.current, camera.up).normalize();
-      if (keys.current.right) velocity.addScaledVector(right.current, speed);
-      if (keys.current.left) velocity.addScaledVector(right.current, -speed);
+      if (input.strafe !== 0) {
+        velocity.addScaledVector(right.current, speed * input.strafe);
+      }
 
-      if (onFloor.current && keys.current.jump) velocity.y = JUMP_SPEED;
+      if (onFloor.current && input.jump) velocity.y = JUMP_SPEED;
       if (!onFloor.current) velocity.y -= GRAVITY * deltaTime;
 
       // Damping, weaker in the air so a jump keeps its arc.
@@ -114,7 +141,9 @@ function Controller() {
 export default function Player() {
   return (
     <>
-      <PointerLockControls makeDefault selector="#blade-canvas" />
+      {/* Pointer lock does not exist on a coarse pointer, where the touch
+          overlay turns drags into camera rotation instead. */}
+      {input.touch ? null : <PointerLockControls makeDefault selector="#blade-canvas" />}
       <Controller />
     </>
   );

@@ -7,6 +7,8 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
   background: #000;
   color: #e8e8e6;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -48,7 +50,7 @@ canvas {
   pointer-events: none;
 }
 
-/* The pointer-lock prompt, shown until the canvas takes the pointer. */
+/* The prompt, shown until the controls are engaged. */
 .enter {
   position: absolute;
   inset: 0;
@@ -58,6 +60,12 @@ canvas {
   text-align: center;
   background: rgba(0, 0, 0, 0.55);
   pointer-events: none;
+}
+
+/* On touch the overlay has to catch the tap that starts the room. On a
+   desktop it must not, because the click underneath it takes the pointer. */
+.enter.tappable {
+  pointer-events: auto;
 }
 
 .enter h1 {
@@ -82,4 +90,85 @@ kbd {
   font: inherit;
   font-size: 0.72rem;
   color: #cfcfcd;
+}
+
+/* Touch controls -------------------------------------------------------- */
+
+.touch-layer {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The stick is moved to wherever the thumb landed, so it is positioned from
+   its own centre rather than from a corner. */
+.stick {
+  position: absolute;
+  width: 108px;
+  height: 108px;
+  margin: -54px 0 0 -54px;
+  border: 1px solid rgba(232, 232, 230, 0.22);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+  pointer-events: none;
+}
+
+.stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(232, 232, 230, 0.3);
+  transform: translate(-50%, -50%);
+}
+
+.touch-button {
+  --charge: 0;
+  position: absolute;
+  right: max(1.25rem, env(safe-area-inset-right));
+  width: 74px;
+  height: 74px;
+  padding: 0;
+  border: 1px solid rgba(232, 232, 230, 0.25);
+  border-radius: 50%;
+  font: inherit;
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #cfcfcd;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  /* The fill is the charge: it climbs the button as the throw winds up. */
+  background:
+    linear-gradient(
+      to top,
+      rgba(222, 222, 141, 0.35) calc(var(--charge) * 100%),
+      rgba(0, 0, 0, 0.28) calc(var(--charge) * 100%)
+    );
+}
+
+.touch-button:active {
+  border-color: rgba(232, 232, 230, 0.5);
+}
+
+.throw {
+  bottom: max(7.5rem, calc(env(safe-area-inset-bottom) + 7.5rem));
+}
+
+.jump {
+  bottom: max(1.5rem, calc(env(safe-area-inset-bottom) + 1.5rem));
+}
+
+/* The backend badge sits under the jump button on a phone. */
+@media (pointer: coarse) {
+  .backend {
+    left: max(1rem, env(safe-area-inset-left));
+    right: auto;
+  }
 }

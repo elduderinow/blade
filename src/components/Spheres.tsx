@@ -3,6 +3,7 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { input } from "@/lib/input";
 import { useCollision } from "./CollisionContext";
 
 const COUNT = 50;
@@ -19,9 +20,9 @@ const OFFSET_DOWN = 0.11;
 type Ball = { collider: THREE.Sphere; velocity: THREE.Vector3 };
 
 /**
- * Fifty balls, thrown one at a time in a ring buffer. Hold the mouse to charge
- * the throw. They bounce off the world octree, off the player, and off each
- * other.
+ * Fifty balls, thrown one at a time in a ring buffer. Hold the mouse or the
+ * throw button to charge. They bounce off the world octree, off the player, and
+ * off each other.
  *
  * They are one InstancedMesh here rather than fifty meshes sharing a geometry.
  * Same pixels, one draw call, and the SSGI pass reads the same depth either
@@ -33,7 +34,6 @@ export default function Spheres() {
 
   const instances = useRef<THREE.InstancedMesh>(null);
   const next = useRef(0);
-  const pressedAt = useRef(0);
 
   const balls = useMemo<Ball[]>(
     () =>
@@ -51,7 +51,6 @@ export default function Spheres() {
       forward: new THREE.Vector3(),
       right: new THREE.Vector3(),
       down: new THREE.Vector3(),
-      nozzle: new THREE.Vector3(),
       center: new THREE.Vector3(),
       normal: new THREE.Vector3(),
       v1: new THREE.Vector3(),
@@ -63,7 +62,7 @@ export default function Spheres() {
 
   // Park every instance below the floor on mount. Without this the matrices
   // start as identity and all fifty balls sit in one lump at the origin until
-  // the first simulated frame, which only runs once the pointer is locked.
+  // the first simulated frame, which only runs once the controls are engaged.
   useEffect(() => {
     const mesh = instances.current;
     if (!mesh) return;
@@ -74,45 +73,32 @@ export default function Spheres() {
     mesh.instanceMatrix.needsUpdate = true;
   }, [balls, scratch]);
 
-  useEffect(() => {
-    const canvas = document.getElementById("blade-canvas");
-    if (!canvas) return;
+  /**
+   * Launch the next ball in the ring buffer. `held` is how long the throw was
+   * charged for, in milliseconds, and comes from whichever control surface is
+   * attached: a mouse press on the canvas, or the touch overlay's throw button.
+   */
+  const throwBall = (held: number) => {
+    const velocity = playerVelocity.current;
+    if (!velocity) return;
 
-    const onMouseDown = () => {
-      pressedAt.current = performance.now();
-    };
+    const ball = balls[next.current];
+    scratch.forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    scratch.right.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    scratch.down.set(0, -1, 0).applyQuaternion(camera.quaternion);
 
-    const onMouseUp = () => {
-      if (!document.pointerLockElement || !playerVelocity.current) return;
+    ball.collider.center
+      .copy(camera.position)
+      .addScaledVector(scratch.forward, OFFSET_FORWARD)
+      .addScaledVector(scratch.right, OFFSET_RIGHT)
+      .addScaledVector(scratch.down, OFFSET_DOWN);
 
-      const ball = balls[next.current];
-      scratch.forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
-      scratch.right.set(1, 0, 0).applyQuaternion(camera.quaternion);
-      scratch.down.set(0, -1, 0).applyQuaternion(camera.quaternion);
+    // Charge: held longer throws harder, levelling off around 200.
+    const impulse = 80 + 120 * (1 - Math.exp(-held * 0.001));
+    ball.velocity.copy(scratch.forward).multiplyScalar(impulse).addScaledVector(velocity, 3);
 
-      ball.collider.center
-        .copy(camera.position)
-        .addScaledVector(scratch.forward, OFFSET_FORWARD)
-        .addScaledVector(scratch.right, OFFSET_RIGHT)
-        .addScaledVector(scratch.down, OFFSET_DOWN);
-
-      // Charge: held longer throws harder, levelling off around 200.
-      const impulse = 80 + 120 * (1 - Math.exp((pressedAt.current - performance.now()) * 0.001));
-      ball.velocity
-        .copy(scratch.forward)
-        .multiplyScalar(impulse)
-        .addScaledVector(playerVelocity.current, 3);
-
-      next.current = (next.current + 1) % balls.length;
-    };
-
-    canvas.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("mouseup", onMouseUp);
-    return () => {
-      canvas.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("mouseup", onMouseUp);
-    };
-  }, [balls, camera, playerVelocity, scratch]);
+    next.current = (next.current + 1) % balls.length;
+  };
 
   useFrame((_, delta) => {
     const world = octree.current;
@@ -120,6 +106,10 @@ export default function Spheres() {
     const collider = playerCollider.current;
     const velocity = playerVelocity.current;
     if (!ready || !world || !mesh || !collider || !velocity) return;
+
+    // Throws are queued by DOM handlers and fired here, so a press that lands
+    // between two frames still throws from the camera's current position.
+    while (input.throws.length > 0) throwBall(input.throws.shift() as number);
 
     const deltaTime = Math.min(0.05, delta) / STEPS_PER_FRAME;
 
