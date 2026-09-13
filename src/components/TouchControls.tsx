@@ -3,85 +3,92 @@
 import { useEffect, useRef } from "react";
 import { input } from "@/lib/input";
 
-/** How far from where your thumb landed counts as a full tilt, in CSS pixels. */
-const STICK_RANGE = 54;
 /** Radians of rotation per pixel dragged. */
 const LOOK_SPEED = 0.004;
+
+type Direction = "up" | "down" | "left" | "right";
+
 /**
- * Thumb controls for a coarse pointer: a stick that appears wherever you touch
- * the left half of the screen, drag-to-look on the right half, and two buttons.
+ * Thumb controls for a coarse pointer: a four-way pad bottom left, drag
+ * anywhere else to look, and two buttons on the right.
  *
- * All of it writes into the input singleton and none of it into React state.
- * A stick that re-rendered the tree on every pointermove would cost more than
- * the frame it is trying to steer, so the knob is moved by writing a transform
- * onto the node directly.
+ * The pad is four buttons rather than a stick because a stick needs a thumb to
+ * stay put on a surface that is also the thing you are looking at, and on a
+ * phone held in landscape there is nowhere to put it that is not already under
+ * a hand. Buttons you can find without looking.
+ *
+ * All of it writes into the input singleton and none of it into React state. A
+ * pad that re-rendered the tree on every pointermove would cost more than the
+ * frame it is trying to steer, so the pressed styling is a class written onto
+ * the node directly.
  */
 export default function TouchControls() {
   const layer = useRef<HTMLDivElement>(null);
-  const stick = useRef<HTMLDivElement>(null);
-  const knob = useRef<HTMLDivElement>(null);
+  const pad = useRef<HTMLDivElement>(null);
   const charge = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const surface = layer.current;
-    const base = stick.current;
-    const handle = knob.current;
-    if (!surface || !base || !handle) return;
+    const padEl = pad.current;
+    if (!surface || !padEl) return;
 
-    // Which pointer is doing what. A thumb on each half at once has to keep
-    // moving and looking apart, so each is tracked by its own pointerId.
-    let movePointer: number | null = null;
+    // Which pointer is holding which direction. A thumb can slide from one
+    // arrow onto another without lifting, and two thumbs can hold a diagonal,
+    // so the mapping has to be per pointer rather than per button.
+    const holding = new Map<number, Direction>();
     let lookPointer: number | null = null;
-    let origin = { x: 0, y: 0 };
     let last = { x: 0, y: 0 };
 
-    const showStick = (x: number, y: number) => {
-      base.style.left = `${x}px`;
-      base.style.top = `${y}px`;
-      base.style.opacity = "1";
-      handle.style.transform = "translate(-50%, -50%)";
+    const directionAt = (x: number, y: number): Direction | null => {
+      const el = document.elementFromPoint(x, y);
+      const arrow = (el as HTMLElement | null)?.closest?.("[data-dir]");
+      return (arrow?.getAttribute("data-dir") as Direction | undefined) ?? null;
     };
 
-    const hideStick = () => {
-      base.style.opacity = "0";
-      input.forward = 0;
-      input.strafe = 0;
-    };
+    /**
+     * Recomputed from every held direction at once. Opposing arrows cancel,
+     * which is what a stick would do and what the keyboard already does.
+     */
+    const apply = () => {
+      const held = new Set(holding.values());
+      input.forward = (held.has("up") ? 1 : 0) - (held.has("down") ? 1 : 0);
+      input.strafe = (held.has("right") ? 1 : 0) - (held.has("left") ? 1 : 0);
 
-    const onPointerDown = (event: PointerEvent) => {
-      // The buttons sit on top of this layer and handle their own pointers.
-      if ((event.target as HTMLElement).closest("[data-touch-button]")) return;
-
-      surface.setPointerCapture(event.pointerId);
-
-      if (event.clientX < window.innerWidth / 2) {
-        if (movePointer !== null) return;
-        movePointer = event.pointerId;
-        origin = { x: event.clientX, y: event.clientY };
-        showStick(event.clientX, event.clientY);
-      } else {
-        if (lookPointer !== null) return;
-        lookPointer = event.pointerId;
-        last = { x: event.clientX, y: event.clientY };
+      for (const arrow of padEl.querySelectorAll<HTMLElement>("[data-dir]")) {
+        arrow.classList.toggle("held", held.has(arrow.dataset.dir as Direction));
       }
     };
 
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement;
+      // The throw and jump buttons handle their own pointers.
+      if (target.closest("[data-touch-button]")) return;
+
+      surface.setPointerCapture(event.pointerId);
+
+      const direction = directionAt(event.clientX, event.clientY);
+      if (direction) {
+        holding.set(event.pointerId, direction);
+        apply();
+        return;
+      }
+
+      // Anything that is not the pad looks around, either half of the screen.
+      // Reserving a half for movement costs the half of a landscape phone that
+      // is easiest to reach.
+      if (lookPointer !== null) return;
+      lookPointer = event.pointerId;
+      last = { x: event.clientX, y: event.clientY };
+    };
+
     const onPointerMove = (event: PointerEvent) => {
-      if (event.pointerId === movePointer) {
-        let dx = event.clientX - origin.x;
-        let dy = event.clientY - origin.y;
-
-        // Clamp to the ring, so a thumb that slides off the stick keeps
-        // pointing where it last was rather than accelerating forever.
-        const distance = Math.hypot(dx, dy);
-        if (distance > STICK_RANGE) {
-          dx = (dx / distance) * STICK_RANGE;
-          dy = (dy / distance) * STICK_RANGE;
-        }
-
-        handle.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-        input.strafe = dx / STICK_RANGE;
-        input.forward = -dy / STICK_RANGE;
+      if (holding.has(event.pointerId)) {
+        const direction = directionAt(event.clientX, event.clientY);
+        // Sliding off the pad entirely releases, rather than sticking on the
+        // last arrow the thumb happened to cross.
+        if (direction) holding.set(event.pointerId, direction);
+        else holding.delete(event.pointerId);
+        apply();
         return;
       }
 
@@ -95,10 +102,7 @@ export default function TouchControls() {
     };
 
     const onPointerUp = (event: PointerEvent) => {
-      if (event.pointerId === movePointer) {
-        movePointer = null;
-        hideStick();
-      }
+      if (holding.delete(event.pointerId)) apply();
       if (event.pointerId === lookPointer) lookPointer = null;
     };
 
@@ -111,6 +115,8 @@ export default function TouchControls() {
       surface.removeEventListener("pointermove", onPointerMove);
       surface.removeEventListener("pointerup", onPointerUp);
       surface.removeEventListener("pointercancel", onPointerUp);
+      input.forward = 0;
+      input.strafe = 0;
     };
   }, []);
 
@@ -157,8 +163,11 @@ export default function TouchControls() {
 
   return (
     <div ref={layer} className="touch-layer">
-      <div ref={stick} className="stick">
-        <div ref={knob} className="stick-knob" />
+      <div ref={pad} className="dpad">
+        <span className="dpad-arrow up" data-dir="up" aria-label="Forward" />
+        <span className="dpad-arrow left" data-dir="left" aria-label="Left" />
+        <span className="dpad-arrow right" data-dir="right" aria-label="Right" />
+        <span className="dpad-arrow down" data-dir="down" aria-label="Back" />
       </div>
 
       <button

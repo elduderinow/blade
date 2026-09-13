@@ -9,12 +9,18 @@ export const metadata: Metadata = {
 /**
  * No pinch zoom and no rubber band: a double tap meant to throw twice should
  * not zoom the page, and dragging to look should not drag the page with it.
+ *
+ * `viewportFit: "cover"` is what makes the safe-area insets non-zero. Without
+ * it iOS letterboxes the page away from the notch and every `env()` reads 0,
+ * which is invisible in portrait and puts the pad under the notch as soon as
+ * the phone is turned on its side.
  */
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: "cover",
   themeColor: "#000000",
 };
 

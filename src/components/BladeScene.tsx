@@ -152,9 +152,11 @@ export default function BladeScene() {
             <p>
               Tap to start
               <br />
-              Left thumb to move · drag the right to look
+              Pad to move · drag anywhere else to look
               <br />
               Hold <kbd>throw</kbd> to charge, let go to throw
+              <br />
+              Turn the phone sideways for a wider room
             </p>
           ) : (
             <p>

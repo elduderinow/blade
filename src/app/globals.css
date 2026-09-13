@@ -103,29 +103,81 @@ kbd {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* The stick is moved to wherever the thumb landed, so it is positioned from
-   its own centre rather than from a corner. */
-.stick {
+/* The four-way pad. One grid, arrows in the cross cells, corners left empty so
+   a thumb sliding diagonally passes between arrows rather than through one. */
+.dpad {
+  --key: 62px;
   position: absolute;
-  width: 108px;
-  height: 108px;
-  margin: -54px 0 0 -54px;
-  border: 1px solid rgba(232, 232, 230, 0.22);
-  border-radius: 50%;
-  opacity: 0;
-  transition: opacity 120ms ease-out;
-  pointer-events: none;
+  left: max(1rem, env(safe-area-inset-left));
+  bottom: max(1.25rem, calc(env(safe-area-inset-bottom) + 1.25rem));
+  display: grid;
+  grid-template-columns: repeat(3, var(--key));
+  grid-template-rows: repeat(3, var(--key));
+  gap: 4px;
 }
 
-.stick-knob {
+.dpad-arrow {
+  position: relative;
+  border: 1px solid rgba(232, 232, 230, 0.25);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  /* The pad is hit-tested with elementFromPoint, which needs to land on the
+     arrow itself and not on a child. */
+  pointer-events: auto;
+}
+
+/* The glyph. Drawn with borders so it costs no font and no asset, and marked
+   inert so the hit test never returns it instead of its parent. */
+.dpad-arrow::after {
+  content: "";
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  background: rgba(232, 232, 230, 0.3);
-  transform: translate(-50%, -50%);
+  width: 0;
+  height: 0;
+  border: 9px solid transparent;
+  pointer-events: none;
+}
+
+.dpad-arrow.held {
+  border-color: rgba(232, 232, 230, 0.55);
+  background: rgba(232, 232, 230, 0.16);
+}
+
+.dpad-arrow.up {
+  grid-area: 1 / 2;
+}
+
+.dpad-arrow.left {
+  grid-area: 2 / 1;
+}
+
+.dpad-arrow.right {
+  grid-area: 2 / 3;
+}
+
+.dpad-arrow.down {
+  grid-area: 3 / 2;
+}
+
+.dpad-arrow.up::after {
+  transform: translate(-50%, -60%);
+  border-bottom-color: #cfcfcd;
+}
+
+.dpad-arrow.down::after {
+  transform: translate(-50%, -40%);
+  border-top-color: #cfcfcd;
+}
+
+.dpad-arrow.left::after {
+  transform: translate(-60%, -50%);
+  border-right-color: #cfcfcd;
+}
+
+.dpad-arrow.right::after {
+  transform: translate(-40%, -50%);
+  border-left-color: #cfcfcd;
 }
 
 .touch-button {
@@ -165,10 +217,45 @@ kbd {
   bottom: max(1.5rem, calc(env(safe-area-inset-bottom) + 1.5rem));
 }
 
-/* The backend badge sits under the jump button on a phone. */
+/* The badge would sit under the throw button on a phone. */
 @media (pointer: coarse) {
   .backend {
-    left: max(1rem, env(safe-area-inset-left));
+    left: 50%;
     right: auto;
+    transform: translateX(-50%);
+  }
+}
+
+/* Landscape on a phone is short, not small: the same controls have to fit in
+   roughly 390px of height, and the notch is now on a side rather than on top.
+   Everything shrinks and the two buttons go side by side instead of stacked. */
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
+  .dpad {
+    --key: 50px;
+    gap: 3px;
+    bottom: max(0.75rem, calc(env(safe-area-inset-bottom) + 0.75rem));
+  }
+
+  .dpad-arrow::after {
+    border-width: 8px;
+  }
+
+  .touch-button {
+    width: 62px;
+    height: 62px;
+    bottom: max(0.75rem, calc(env(safe-area-inset-bottom) + 0.75rem));
+  }
+
+  .throw {
+    right: max(1.25rem, calc(env(safe-area-inset-right) + 0.25rem));
+  }
+
+  .jump {
+    right: max(6rem, calc(env(safe-area-inset-right) + 5rem));
+  }
+
+  .enter p {
+    font-size: 0.7rem;
+    line-height: 1.5;
   }
 }
